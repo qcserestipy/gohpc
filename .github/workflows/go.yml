@@ -25,4 +25,4 @@ jobs:
       run: go build -o ./bin/pi cmd/example/main.go
     
     - name: Perform Test run
-      run: ./bin/pi
+      run: ./bin/pi -n 10000000000
