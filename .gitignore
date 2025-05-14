@@ -1,0 +1,13 @@
+# Blacklist
+*
+
+#Whitelist directories
+!*/
+
+#Whitelist files
+!.gitignore
+!LICENSE
+!*.go 
+!*.mod
+!*.sum
+!*.md
