@@ -2,6 +2,9 @@
 
 > A lightweight High-Performance Computing toolkit for Go, providing parallel execution primitives, numerical routines, and more.
 
+[![Release](https://img.shields.io/github/v/release/qcserestipy/gohpc?label=version&color=blue)](https://github.com/qcserestipy/gohpc/releases)
+[![License](https://img.shields.io/github/license/qcserestipy/gohpc)](https://github.com/qcserestipy/gohpc/blob/main/LICENSE)
+
 ## Features
 
 * **Generic Worker Pool Executor**: Dispatch arbitrary functions across multiple cores with ease.
