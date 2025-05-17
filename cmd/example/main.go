@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/qcserestipy/gohpc/pkg/serve"
 	"github.com/qcserestipy/gohpc/pkg/workerpool"
 	"github.com/sirupsen/logrus"
 )
@@ -85,25 +86,38 @@ func main() {
 	}
 
 	// Run
-	start := time.Now()
-	logrus.Info("Starting computation...")
-	results := pool.Run(tasks, work)
-	elapsed := time.Since(start)
 
-	// Aggregate
-	total := 0.0
-	for _, v := range results {
-		total += v
-	}
-	piApprox := 4 * (total / float64(nTests))
+	computeServer := serve.New()
+	serve.CreateRoutes(
+		computeServer.Router,
+		"/compute",
+		func(_ struct{}) (serve.ComputeResponse, error) {
+			logrus.Info("Starting computation...")
+			start := time.Now()
+			results := pool.Run(tasks, work)
+			totalInCircle := 0.0
+			for _, c := range results {
+				totalInCircle += c
+			}
+			piApprox := 4 * totalInCircle / float64(nTests)
+			elapsed := time.Since(start)
 
-	logrus.WithFields(logrus.Fields{
-		"pi_approximation": piApprox,
-		"error":            math.Abs(piApprox - math.Pi),
-		"duration":         elapsed,
-		"points_per_sec":   float64(nTests) / elapsed.Seconds(),
-	}).Info("Computation completed")
+			logrus.WithFields(logrus.Fields{
+				"pi_approximation": piApprox,
+				"error":            math.Abs(piApprox - math.Pi),
+				"duration":         elapsed,
+				"points_per_sec":   float64(nTests) / elapsed.Seconds(),
+			}).Info("Computation completed")
 
-	logrus.Infof("π ≈ %0.8f (error: %0.8f, computed in %s)",
-		piApprox, math.Abs(piApprox-math.Pi), elapsed)
+			logrus.Infof("π ≈ %0.8f (error: %0.8f, computed in %s)",
+				piApprox, math.Abs(piApprox-math.Pi), elapsed)
+
+			return serve.ComputeResponse{
+				Message: "π approximation complete",
+				Result:  piApprox,
+			}, nil
+		},
+	)
+	serve.Launch(computeServer, 3000)
+
 }
