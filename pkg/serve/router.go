@@ -6,39 +6,42 @@ import (
 	"net/http"
 	"runtime"
 
+	"github.com/qcserestipy/gohpc/pkg/workerpool"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-type ComputeResponse struct {
-	Message string  `json:"message"`
-	Result  float64 `json:"result,omitempty"`
-}
-
-type ComputeServer struct {
-	NumWorkers int
+type ComputeServer[T any, R any] struct {
 	Router     *chi.Mux
+	NumWorkers int
+	WorkerPool *workerpool.WorkerPoolExecutor[T, R]
 }
 
-func New(workers ...int) *ComputeServer {
+func New[T any, R any](workers ...int) *ComputeServer[T, R] {
 	numWorkers := runtime.NumCPU()
 	if len(workers) > 0 && workers[0] > 0 {
 		numWorkers = workers[0]
 	}
+	pool := workerpool.New[T, R](numWorkers)
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-	return &ComputeServer{numWorkers, r}
+	log.Infof("🛠  ComputeServer initialized with %d workers", numWorkers)
+	return &ComputeServer[T, R]{
+		Router:     r,
+		NumWorkers: numWorkers,
+		WorkerPool: pool,
+	}
 }
 
-func Launch(s *ComputeServer, targetPort int) {
+func Launch[T any, R any](s *ComputeServer[T, R], targetPort int) {
 	addr := fmt.Sprintf(":%d", targetPort)
-	log.Infof("▶️  Starting server on %s", addr)
-	// ListenAndServe blocks until an error occurs (e.g. port already in use).
+	log.Infof("🚀  Starting server on %s", addr)
+	log.Infof("🔌  Ready to accept requests")
 	if err := http.ListenAndServe(addr, s.Router); err != nil {
 		log.Fatalf("❌  Server failed: %v", err)
 	}
@@ -68,4 +71,5 @@ func CreateRoutes[T any, R any](
 			return
 		}
 	})
+	log.Infof("📡  Route registered: POST %s", path)
 }
