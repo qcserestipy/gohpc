@@ -1,3 +1,4 @@
+// multinode.go
 package main
 
 import (
@@ -18,25 +19,43 @@ type ComputeRequest struct {
 	Total int `json:"total"`
 }
 
-type Task struct {
-	Count int
+type ReturnType struct {
+	Result []float64 `json:"result"`
+	Total  int       `json:"total"`
+}
+
+type Task struct{ Count int }
+
+func init() {
+	logrus.SetFormatter(&logrus.TextFormatter{
+		FullTimestamp:   true,
+		TimestampFormat: time.RFC3339,
+	})
+	logrus.SetLevel(logrus.DebugLevel)
 }
 
 func main() {
 	logrus.Info("Starting Monte Carlo π approximation")
 
-	totalPoints := 1_000_000_0000
+	totalPoints := 1_000_000_000_0
 	nServers := 2
 
-	servers := make([]*serve.ComputeServer[ComputeRequest, Task, float64], nServers)
+	servers := make([]*serve.ComputeServer[Task, float64], nServers)
 	for i := 0; i < nServers; i++ {
-		srv := serve.New[ComputeRequest, Task, float64]()
+		srv := serve.New[Task, float64]()
+		srv.Router.Get("/", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
 
-		srv.HandleCompute(
+		serve.CreateRoutes[ComputeRequest, ReturnType](
+			srv.Router,
 			"/compute",
-			func(req ComputeRequest, nWorkers int) []Task {
-				base := req.Total / nWorkers
-				rem := req.Total % nWorkers
+			func(req ComputeRequest) (ReturnType, error) {
+				// split req.Total across workers
+				nTests := req.Total
+				nWorkers := srv.WorkerPool.NumWorkers
+				base := nTests / nWorkers
+				rem := nTests % nWorkers
 				tasks := make([]Task, nWorkers)
 				for j := 0; j < nWorkers; j++ {
 					extra := 0
@@ -45,21 +64,27 @@ func main() {
 					}
 					tasks[j] = Task{Count: base + extra}
 				}
-				return tasks
-			},
-			func(t Task) float64 {
-				rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-				inC := 0
-				for k := 0; k < t.Count; k++ {
-					x, y := rng.Float64(), rng.Float64()
-					if x*x+y*y < 1 {
-						inC++
+
+				work := func(t Task) float64 {
+					rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+					inC := 0
+					for k := 0; k < t.Count; k++ {
+						x, y := rng.Float64(), rng.Float64()
+						if x*x+y*y < 1 {
+							inC++
+						}
 					}
+					return float64(inC)
 				}
-				return float64(inC)
-			},
-			func(req ComputeRequest) int {
-				return req.Total
+
+				start := time.Now()
+				partials := srv.WorkerPool.Run(tasks, work)
+				logrus.WithFields(logrus.Fields{
+					"duration": time.Since(start),
+					"partials": partials,
+				}).Info("Computed partials")
+
+				return ReturnType{Result: partials, Total: nTests}, nil
 			},
 		)
 
@@ -71,7 +96,7 @@ func main() {
 	}
 
 	var wg sync.WaitGroup
-	results := make(chan serve.ComputeResponse[float64], nServers)
+	results := make(chan ReturnType, nServers)
 
 	for idx := 0; idx < nServers; idx++ {
 		wg.Add(1)
@@ -103,8 +128,8 @@ func main() {
 			}
 			defer resp.Body.Close()
 
-			var rt serve.ComputeResponse[float64]
 			data, _ := io.ReadAll(resp.Body)
+			var rt ReturnType
 			if err := json.Unmarshal(data, &rt); err != nil {
 				logrus.Fatalf("invalid JSON from %s: %s", urlCompute, string(data))
 			}
