@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"runtime"
 
+	logrusmiddleware "github.com/chi-middleware/logrus-logger"
 	"github.com/qcserestipy/gohpc/pkg/workerpool"
 	log "github.com/sirupsen/logrus"
 
@@ -17,25 +18,30 @@ type ComputeServer[T any, R any] struct {
 	Router     *chi.Mux
 	NumWorkers int
 	WorkerPool *workerpool.WorkerPoolExecutor[T, R]
+	Jobs       []Job
 }
 
 func New[T any, R any](workers ...int) *ComputeServer[T, R] {
+	logger := log.New()
+	logger.SetFormatter(&log.TextFormatter{FullTimestamp: true})
 	numWorkers := runtime.NumCPU()
 	if len(workers) > 0 && workers[0] > 0 {
 		numWorkers = workers[0]
 	}
-	pool := workerpool.New[T, R](numWorkers)
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
+	r.Use(logrusmiddleware.Logger("api", logger))
 	r.Use(middleware.Recoverer)
-	log.Infof("🛠  ComputeServer initialized with %d workers", numWorkers)
-	return &ComputeServer[T, R]{
+	srv := &ComputeServer[T, R]{
 		Router:     r,
 		NumWorkers: numWorkers,
-		WorkerPool: pool,
+		WorkerPool: workerpool.New[T, R](numWorkers),
+		Jobs:       make([]Job, 0),
 	}
+	createJobRoute(r, &srv.Jobs)
+	log.Infof("🛠  ComputeServer initialized with %d workers", numWorkers)
+	return srv
 }
 
 func Launch[T any, R any](s *ComputeServer[T, R], targetPort int) {
