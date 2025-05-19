@@ -31,6 +31,6 @@ jobs:
       run: go build -o ./bin/pi cmd/example/chudnovsky/main.go
     
     - name: Perform Test run Chudnovsky 
-      run: ./bin/pi -terms 35 -digits 500
+      run: ./bin/pi -terms 141 -digits 2000
 
 
