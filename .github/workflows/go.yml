@@ -21,8 +21,16 @@ jobs:
       with:
         go-version: '1.24'
 
-    - name: Build
-      run: go build -o ./bin/pi cmd/example/main.go
+    - name: Build Monte Carlo
+      run: go build -o ./bin/pi cmd/example/monte-carlo/main.go
     
-    - name: Perform Test run
+    - name: Perform Test run Monte Carlo
       run: ./bin/pi -n 10000000000
+
+    - name: Build Chudnovsky
+      run: go build -o ./bin/pi cmd/example/chudnovsky/main.go
+    
+    - name: Perform Test run Chudnovsky 
+      run: ./bin/pi -terms 35 -digits 500
+
+
