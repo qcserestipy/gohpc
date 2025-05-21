@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"math"
 	"math/rand"
@@ -54,11 +55,13 @@ func main() {
 
 	setupStart := time.Now()
 	// Create pool
-	pool := workerpool.New[Task, float64](numWorkers)
+	pool := workerpool.New[Task, float64](
+		workerpool.WithWorkers(numWorkers),
+	)
 	logrus.Infof("Worker pool initialized in %v", time.Since(setupStart))
 
 	// Define work
-	work := func(t Task) float64 {
+	work := func(ctx context.Context, t Task) float64 {
 		taskStart := time.Now()
 		inCircle := 0
 		seed := time.Now().UnixNano()
@@ -86,8 +89,15 @@ func main() {
 
 	// Run
 	start := time.Now()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // always call cancel to release resources
+
 	logrus.Info("Starting computation...")
-	results := pool.Run(tasks, work)
+	results, err := pool.Run(ctx, tasks, work)
+	if err != nil {
+		logrus.Fatalf("Worker pool exited with error: %v", err)
+	}
 	elapsed := time.Since(start)
 
 	// Aggregate

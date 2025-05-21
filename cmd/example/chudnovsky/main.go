@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"math/big"
 	"runtime"
@@ -60,8 +61,10 @@ func main() {
 		tasks[i] = Task{Start: start, End: start + count}
 	}
 
-	pool := workerpool.New[Task, *big.Float](numWorkers)
-	work := func(t Task) *big.Float {
+	pool := workerpool.New[Task, *big.Float](
+		workerpool.WithWorkers(numWorkers),
+	)
+	work := func(ctx context.Context, t Task) *big.Float {
 		sum := new(big.Float).SetPrec(prec)
 		for k := t.Start; k < t.End; k++ {
 			// Numerator: (6k)! * (13591409 + 545140134*k)
@@ -84,7 +87,12 @@ func main() {
 	}
 
 	startTime := time.Now()
-	partials := pool.Run(tasks, work)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	partials, err := pool.Run(ctx, tasks, work)
+	if err != nil {
+		logrus.Fatalf("Worker pool exited with error: %v", err)
+	}
 	totalSum := new(big.Float).SetPrec(prec)
 	for _, part := range partials {
 		totalSum.Add(totalSum, part)
@@ -108,12 +116,12 @@ func main() {
 	}
 
 	// Compute absolute error: |pi - refPi|
-	err := new(big.Float).SetPrec(prec).Sub(pi, refPi)
-	err.Abs(err)
+	reserr := new(big.Float).SetPrec(prec).Sub(pi, refPi)
+	reserr.Abs(reserr)
 
 	// Print result
 	piStr := pi.Text('f', digits)
-	errStr := err.Text('f', digits)
+	errStr := reserr.Text('f', digits)
 	logrus.Infof("π ≈ %s", piStr)
 	logrus.Infof("Absolute error ≈ %s", errStr)
 	logrus.Infof("Computed in %s", elapsed)
