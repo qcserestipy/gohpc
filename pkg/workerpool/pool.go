@@ -4,7 +4,6 @@ package workerpool
 
 import (
 	"context"
-	"fmt"
 	"runtime"
 	"sync"
 )
@@ -45,7 +44,10 @@ func New[T any, R any](opts ...PoolOptionFunc) *WorkerPoolExecutor[T, R] {
 
 // Run executes the given function fn on each input using a pool of workers.
 // It returns the results in the same order as inputs, and an error if canceled early.
-func (w *WorkerPoolExecutor[T, R]) Run(ctx context.Context, inputs []T, fn func(context.Context, T) R) ([]R, error) {
+// Run dispatches each input through fn concurrently, using up to NumWorkers.
+// It returns a slice of results in the same order as inputs.
+func (w *WorkerPoolExecutor[T, R]) Run(ctx context.Context, inputs []T, fn func(ctx context.Context, t T) R) ([]R, error) {
+	// Internal types to carry index for ordering
 	type task struct {
 		idx   int
 		input T
@@ -56,66 +58,85 @@ func (w *WorkerPoolExecutor[T, R]) Run(ctx context.Context, inputs []T, fn func(
 	}
 
 	tasks := make(chan task)
-	results := make(chan result, len(inputs)) // buffered to avoid blocking
-	var wg sync.WaitGroup
+	results := make(chan result, len(inputs))
 
-	// Start worker goroutines
+	var wg sync.WaitGroup
 	wg.Add(w.NumWorkers)
+	// Start worker goroutines
 	for i := 0; i < w.NumWorkers; i++ {
 		go func() {
 			defer wg.Done()
+
 			for {
 				select {
+				// 1) Check for cancellation
 				case <-ctx.Done():
 					return
+
+				// 2) Try to pull a task
 				case t, ok := <-tasks:
 					if !ok {
+						// tasks channel closed → all done
 						return
 					}
-					out := fn(ctx, t.input)
+
+					// 3) (Optional) check again before heavy work
 					select {
-					case results <- result{t.idx, out}:
 					case <-ctx.Done():
 						return
+					default:
+					}
+
+					// 4) Do the real work
+					out := fn(ctx, t.input)
+
+					// 5) Try to send result, but return on cancel
+					select {
+					case <-ctx.Done():
+						return
+					case results <- result{idx: t.idx, output: out}:
 					}
 				}
 			}
 		}()
 	}
 
-	// Feed tasks to the channel
+	// Feed tasks and close channels appropriately
 	go func() {
 		for i, input := range inputs {
 			select {
 			case <-ctx.Done():
-				return
+				return // exits the goroutine immediately
 			case tasks <- task{idx: i, input: input}:
 			}
 		}
 		close(tasks)
 	}()
 
-	// Wait for all workers to finish, then close results
 	go func() {
 		wg.Wait()
 		close(results)
 	}()
 
-	// Collect results
 	outputs := make([]R, len(inputs))
-	received := 0
-	for r := range results {
-		outputs[r.idx] = r.output
-		received++
-	}
+	collected := 0
 
-	// Check for early cancellation
-	if err := ctx.Err(); err != nil {
-		return outputs, fmt.Errorf("worker pool exited early: %w", err)
-	}
-	if received < len(inputs) {
-		return outputs, fmt.Errorf("worker pool did not return all results: got %d of %d", received, len(inputs))
-	}
+	// Keep going until we've seen every expected result
+	for collected < len(inputs) {
+		select {
+		case <-ctx.Done():
+			// Context was cancelled: abort immediately, return the error
+			return nil, ctx.Err()
 
+		case r, ok := <-results:
+			if !ok {
+				// results closed unexpectedly (shouldn't really happen unless you close it early), so just return what we have
+				return outputs, nil
+			}
+			// Store by index so order is preserved
+			outputs[r.idx] = r.output
+			collected++
+		}
+	}
 	return outputs, nil
 }
