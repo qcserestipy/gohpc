@@ -6,8 +6,10 @@
 
 #Whitelist files
 !.gitignore
+!CODEOWNERS
 !LICENSE
 !*.go 
 !*.mod
 !*.sum
 !*.md
+!*.yml
