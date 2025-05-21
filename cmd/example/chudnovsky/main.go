@@ -86,9 +86,9 @@ func main() {
 		return sum
 	}
 
-	startTime := time.Now()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	startTime := time.Now()
 	partials, err := pool.Run(ctx, tasks, work)
 	if err != nil {
 		logrus.Fatalf("Worker pool exited with error: %v", err)

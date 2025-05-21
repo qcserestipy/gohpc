@@ -88,12 +88,9 @@ func main() {
 	}
 
 	// Run
-	start := time.Now()
-
 	ctx, cancel := context.WithCancel(context.Background())
-	// ctx, cancel := context.WithTimeout(context.Background(), time.Second*9)
 	defer cancel()
-
+	start := time.Now()
 	logrus.Info("Starting computation...")
 	results, err := pool.Run(ctx, tasks, work)
 	if err != nil {

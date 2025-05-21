@@ -66,31 +66,20 @@ func (w *WorkerPoolExecutor[T, R]) Run(ctx context.Context, inputs []T, fn func(
 	for i := 0; i < w.NumWorkers; i++ {
 		go func() {
 			defer wg.Done()
-
 			for {
 				select {
 				// 1) Check for cancellation
 				case <-ctx.Done():
 					return
-
 				// 2) Try to pull a task
 				case t, ok := <-tasks:
 					if !ok {
 						// tasks channel closed → all done
 						return
 					}
-
-					// 3) (Optional) check again before heavy work
-					select {
-					case <-ctx.Done():
-						return
-					default:
-					}
-
-					// 4) Do the real work
+					// 3) Do the  work
 					out := fn(ctx, t.input)
-
-					// 5) Try to send result, but return on cancel
+					// 4) Try to send result, but return on cancel
 					select {
 					case <-ctx.Done():
 						return
